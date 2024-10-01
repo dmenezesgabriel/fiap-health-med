@@ -1,4 +1,5 @@
 # user_service/main.py
+import logging
 import os
 from datetime import datetime
 from typing import List, Optional
@@ -8,7 +9,14 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(root_path="/user_service")
 
 dynamodb = boto3.resource(
     "dynamodb", endpoint_url=os.getenv("AWS_ENDPOINT_URL")
@@ -87,24 +95,36 @@ class AvailabilityDelete(BaseModel):
 class UserRepository:
     @staticmethod
     async def get_user(email: str):
+        logger.info(f"Attempting to retrieve user: {email}")
         try:
             response = user_table.get_item(Key={"email": email})
-            return response.get("Item")
+            if "Item" in response:
+                logger.info(f"User retrieved successfully: {email}")
+                return response["Item"]
+            logger.info(f"User not found: {email}")
+            return None
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error retrieving user: {e.response['Error']['Message']}"
+            )
             return None
 
     @staticmethod
     async def create_user(user: User):
+        logger.info(f"Attempting to create user: {user.email}")
         try:
             user_table.put_item(Item=user.dict())
+            logger.info(f"User created successfully: {user.email}")
             return True
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error creating user: {e.response['Error']['Message']}"
+            )
             return False
 
     @staticmethod
     async def update_user(user: User):
+        logger.info(f"Attempting to update user: {user.email}")
         try:
             user_table.update_item(
                 Key={"email": user.email},
@@ -116,26 +136,37 @@ class UserRepository:
                     ":m": user.crm,
                 },
             )
+            logger.info(f"User updated successfully: {user.email}")
             return True
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error updating user: {e.response['Error']['Message']}"
+            )
             return False
 
     @staticmethod
     async def get_all_doctors():
+        logger.info("Attempting to retrieve all doctors")
         try:
             response = user_table.scan(
                 FilterExpression="attribute_exists(crm)"
             )
-            return response.get("Items", [])
+            doctors = response.get("Items", [])
+            logger.info(f"Retrieved {len(doctors)} doctors")
+            return doctors
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error retrieving doctors: {e.response['Error']['Message']}"
+            )
             return []
 
 
 class AvailabilityRepository:
     @staticmethod
     async def add_availability(availability: DailyAvailability):
+        logger.info(
+            f"Attempting to add availability for doctor: {availability.doctor_email}"
+        )
         try:
             for slot in availability.time_slots:
                 day_time_slot = (
@@ -149,13 +180,21 @@ class AvailabilityRepository:
                         "end_time": slot.end_time,
                     }
                 )
+            logger.info(
+                f"Availability added successfully for doctor: {availability.doctor_email}"
+            )
             return True
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error adding availability: {e.response['Error']['Message']}"
+            )
             return False
 
     @staticmethod
     async def get_doctor_availability(doctor_email: str):
+        logger.info(
+            f"Attempting to retrieve availability for doctor: {doctor_email}"
+        )
         try:
             response = availability_table.query(
                 KeyConditionExpression="doctor_email = :de",
@@ -172,25 +211,29 @@ class AvailabilityRepository:
                         "end_time": item["end_time"],
                     }
                 )
+            logger.info(f"Retrieved availability for doctor: {doctor_email}")
             return availability
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error retrieving availability: {e.response['Error']['Message']}"
+            )
             return {}
 
     @staticmethod
     async def update_availability(
         doctor_email: str, update: AvailabilityUpdate
     ):
+        logger.info(
+            f"Attempting to update availability for doctor: {doctor_email}"
+        )
         try:
             old_day_time_slot = (
                 f"{update.day}#{update.old_start_time}-{update.old_end_time}"
             )
 
-            # If new times are provided, update the item
             if update.new_start_time and update.new_end_time:
                 new_day_time_slot = f"{update.day}#{update.new_start_time}-{update.new_end_time}"
 
-                # First, add the new item
                 availability_table.put_item(
                     Item={
                         "doctor_email": doctor_email,
@@ -200,7 +243,6 @@ class AvailabilityRepository:
                     }
                 )
 
-                # Then, delete the old item
                 availability_table.delete_item(
                     Key={
                         "doctor_email": doctor_email,
@@ -208,7 +250,6 @@ class AvailabilityRepository:
                     }
                 )
             else:
-                # If no new times are provided, just update the existing item
                 availability_table.update_item(
                     Key={
                         "doctor_email": doctor_email,
@@ -221,15 +262,23 @@ class AvailabilityRepository:
                         ":end": update.new_end_time or update.old_end_time,
                     },
                 )
+            logger.info(
+                f"Availability updated successfully for doctor: {doctor_email}"
+            )
             return True
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error updating availability: {e.response['Error']['Message']}"
+            )
             return False
 
     @staticmethod
     async def delete_availability(
         doctor_email: str, delete: AvailabilityDelete
     ):
+        logger.info(
+            f"Attempting to delete availability for doctor: {doctor_email}"
+        )
         try:
             day_time_slot = (
                 f"{delete.day}#{delete.start_time}-{delete.end_time}"
@@ -240,93 +289,181 @@ class AvailabilityRepository:
                     "day_time_slot": day_time_slot,
                 }
             )
+            logger.info(
+                f"Availability deleted successfully for doctor: {doctor_email}"
+            )
             return True
         except ClientError as e:
-            print(e.response["Error"]["Message"])
+            logger.error(
+                f"Error deleting availability: {e.response['Error']['Message']}"
+            )
             return False
 
 
 class UserService:
     @staticmethod
     async def create_user(user: User):
+        logger.info(f"Attempting to create user: {user.email}")
         existing_user = await UserRepository.get_user(user.email)
         if existing_user:
+            logger.warning(f"User already exists: {user.email}")
             return False
-        return await UserRepository.create_user(user)
+        success = await UserRepository.create_user(user)
+        if success:
+            logger.info(f"User created successfully: {user.email}")
+        else:
+            logger.error(f"Failed to create user: {user.email}")
+        return success
 
     @staticmethod
     async def get_user(email: str):
-        return await UserRepository.get_user(email)
+        logger.info(f"Attempting to retrieve user: {email}")
+        user = await UserRepository.get_user(email)
+        if user:
+            logger.info(f"User retrieved successfully: {email}")
+        else:
+            logger.info(f"User not found: {email}")
+        return user
 
     @staticmethod
     async def update_user(user: User):
+        logger.info(f"Attempting to update user: {user.email}")
         existing_user = await UserRepository.get_user(user.email)
         if not existing_user:
+            logger.warning(f"User not found for update: {user.email}")
             return False
-        return await UserRepository.update_user(user)
+        success = await UserRepository.update_user(user)
+        if success:
+            logger.info(f"User updated successfully: {user.email}")
+        else:
+            logger.error(f"Failed to update user: {user.email}")
+        return success
 
     @staticmethod
     async def get_all_doctors():
-        return await UserRepository.get_all_doctors()
+        logger.info("Attempting to retrieve all doctors")
+        doctors = await UserRepository.get_all_doctors()
+        logger.info(f"Retrieved {len(doctors)} doctors")
+        return doctors
 
     @staticmethod
     async def add_availability(availability: DailyAvailability):
-        return await AvailabilityRepository.add_availability(availability)
+        logger.info(
+            f"Attempting to add availability for doctor: {availability.doctor_email}"
+        )
+        success = await AvailabilityRepository.add_availability(availability)
+        if success:
+            logger.info(
+                f"Availability added successfully for doctor: {availability.doctor_email}"
+            )
+        else:
+            logger.error(
+                f"Failed to add availability for doctor: {availability.doctor_email}"
+            )
+        return success
 
     @staticmethod
     async def get_doctor_availability(doctor_email: str):
-        return await AvailabilityRepository.get_doctor_availability(
+        logger.info(
+            f"Attempting to retrieve availability for doctor: {doctor_email}"
+        )
+        availability = await AvailabilityRepository.get_doctor_availability(
             doctor_email
         )
+        logger.info(f"Retrieved availability for doctor: {doctor_email}")
+        return availability
 
     @staticmethod
     async def update_availability(
         doctor_email: str, update: AvailabilityUpdate
     ):
-        return await AvailabilityRepository.update_availability(
+        logger.info(
+            f"Attempting to update availability for doctor: {doctor_email}"
+        )
+        success = await AvailabilityRepository.update_availability(
             doctor_email, update
         )
+        if success:
+            logger.info(
+                f"Availability updated successfully for doctor: {doctor_email}"
+            )
+        else:
+            logger.error(
+                f"Failed to update availability for doctor: {doctor_email}"
+            )
+        return success
 
     @staticmethod
     async def delete_availability(
         doctor_email: str, delete: AvailabilityDelete
     ):
-        return await AvailabilityRepository.delete_availability(
+        logger.info(
+            f"Attempting to delete availability for doctor: {doctor_email}"
+        )
+        success = await AvailabilityRepository.delete_availability(
             doctor_email, delete
         )
+        if success:
+            logger.info(
+                f"Availability deleted successfully for doctor: {doctor_email}"
+            )
+        else:
+            logger.error(
+                f"Failed to delete availability for doctor: {doctor_email}"
+            )
+        return success
+
+
+# ... [Keep all the route definitions as they are, but add logging] ...
 
 
 @app.post("/users")
 async def create_user(user: User):
+    logger.info(f"Received request to create user: {user.email}")
     success = await UserService.create_user(user)
     if not success:
+        logger.warning(
+            f"Failed to create user: {user.email}. User already exists."
+        )
         raise HTTPException(status_code=400, detail="User already exists")
+    logger.info(f"User created successfully: {user.email}")
     return {"message": "User created successfully"}
 
 
 @app.get("/users/{email}")
 async def get_user(email: str):
+    logger.info(f"Received request to get user: {email}")
     user = await UserService.get_user(email)
     if not user:
+        logger.warning(f"User not found: {email}")
         raise HTTPException(status_code=404, detail="User not found")
+    logger.info(f"User retrieved successfully: {email}")
     return user
 
 
 @app.put("/users/{email}")
 async def update_user(email: str, user: User):
+    logger.info(f"Received request to update user: {email}")
     if email != user.email:
+        logger.warning(
+            f"Email mismatch in update request: path={email}, body={user.email}"
+        )
         raise HTTPException(
             status_code=400, detail="Email in path must match email in body"
         )
     success = await UserService.update_user(user)
     if not success:
+        logger.warning(f"Failed to update user: {email}. User not found.")
         raise HTTPException(status_code=404, detail="User not found")
+    logger.info(f"User updated successfully: {email}")
     return {"message": "User updated successfully"}
 
 
 @app.get("/doctors")
 async def get_all_doctors():
+    logger.info("Received request to get all doctors")
     doctors = await UserService.get_all_doctors()
+    logger.info(f"Retrieved {len(doctors)} doctors")
     return doctors
 
 
@@ -334,22 +471,34 @@ async def get_all_doctors():
 async def add_doctor_availability(
     doctor_email: str, availability: DailyAvailability
 ):
+    logger.info(
+        f"Received request to add availability for doctor: {doctor_email}"
+    )
     if doctor_email != availability.doctor_email:
+        logger.warning(
+            f"Email mismatch in add availability request: path={doctor_email}, body={availability.doctor_email}"
+        )
         raise HTTPException(
             status_code=400,
             detail="Doctor email in path must match email in body",
         )
     success = await UserService.add_availability(availability)
     if not success:
+        logger.error(f"Failed to add availability for doctor: {doctor_email}")
         raise HTTPException(
             status_code=400, detail="Failed to add availability"
         )
+    logger.info(f"Availability added successfully for doctor: {doctor_email}")
     return {"message": "Availability added successfully"}
 
 
 @app.get("/doctors/{doctor_email}/availability")
 async def get_doctor_availability(doctor_email: str):
+    logger.info(
+        f"Received request to get availability for doctor: {doctor_email}"
+    )
     availability = await UserService.get_doctor_availability(doctor_email)
+    logger.info(f"Retrieved availability for doctor: {doctor_email}")
     return availability
 
 
@@ -357,11 +506,20 @@ async def get_doctor_availability(doctor_email: str):
 async def update_doctor_availability(
     doctor_email: str, update: AvailabilityUpdate
 ):
+    logger.info(
+        f"Received request to update availability for doctor: {doctor_email}"
+    )
     success = await UserService.update_availability(doctor_email, update)
     if not success:
+        logger.error(
+            f"Failed to update availability for doctor: {doctor_email}"
+        )
         raise HTTPException(
             status_code=400, detail="Failed to update availability"
         )
+    logger.info(
+        f"Availability updated successfully for doctor: {doctor_email}"
+    )
     return {"message": "Availability updated successfully"}
 
 
@@ -369,9 +527,18 @@ async def update_doctor_availability(
 async def delete_doctor_availability(
     doctor_email: str, delete: AvailabilityDelete
 ):
+    logger.info(
+        f"Received request to delete availability for doctor: {doctor_email}"
+    )
     success = await UserService.delete_availability(doctor_email, delete)
     if not success:
+        logger.error(
+            f"Failed to delete availability for doctor: {doctor_email}"
+        )
         raise HTTPException(
             status_code=400, detail="Failed to delete availability"
         )
+    logger.info(
+        f"Availability deleted successfully for doctor: {doctor_email}"
+    )
     return {"message": "Availability deleted successfully"}

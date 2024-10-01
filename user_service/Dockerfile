@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
 
-CMD exec uvicorn --port=$PORT main:app
+CMD exec uvicorn --port=$PORT main:app --root-path /user_service

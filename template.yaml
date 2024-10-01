@@ -23,7 +23,7 @@ Resources:
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ./appointment_service
-      DockerTag: python3.8-v1
+      DockerTag: python3.12-v2
 
   AppointmentServiceLogGroup:
     Type: AWS::Logs::LogGroup
@@ -45,7 +45,7 @@ Resources:
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ./auth_service
-      DockerTag: python3.8-v1
+      DockerTag: python3.12-v2
 
   AuthServiceLogGroup:
     Type: AWS::Logs::LogGroup
@@ -67,7 +67,7 @@ Resources:
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ./user_service
-      DockerTag: python3.8-v1
+      DockerTag: python3.12-v2
 
   UserServiceLogGroup:
     Type: AWS::Logs::LogGroup

@@ -1,0 +1,8 @@
+version = 0.1
+[default.deploy.parameters]
+stack_name = "fiap-health-med"
+resolve_s3 = true
+s3_prefix = "fiap-health-med"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+image_repositories = ["AppointmentService=010928221646.dkr.ecr.us-east-1.amazonaws.com/fiaphealthmed5f083754/appointmentservice717a4830repo", "AuthService=010928221646.dkr.ecr.us-east-1.amazonaws.com/fiaphealthmed5f083754/authservicef33a1d77repo", "UserService=010928221646.dkr.ecr.us-east-1.amazonaws.com/fiaphealthmed5f083754/userservice79716315repo"]

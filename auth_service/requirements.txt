@@ -1,0 +1,5 @@
+boto3
+fastapi
+pyjwt
+uvicorn
+pydantic[email]

@@ -1,0 +1,91 @@
+services:
+  auth_service:
+    build: ./auth_service
+    ports:
+      - "8001:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    volumes:
+      - ./auth_service:/var/task
+
+    networks:
+      - services-network
+
+  user_service:
+    build: ./user_service
+    ports:
+      - "8002:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    networks:
+      - services-network
+    volumes:
+      - ./user_service:/var/task
+
+  appointment_service:
+    build: ./appointment_service
+    ports:
+      - "8003:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    networks:
+      - services-network
+    volumes:
+      - ./appointment_service:/var/task
+
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:4510-4559:4510-4559"
+    environment:
+      - SERVICES=${SERVICES-lambda,s3,apigateway,cloudwatch,dynamodb,sqs,kinesis,serverless,secretsmanager,ssm}
+      - DEBUG=${DEBUG-}
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./data/localstack_volume}:/var/lib/localstack"
+      # - "./conf/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh" # ready hook
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - services-network
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    ports:
+      - "8080:8001"
+    environment:
+      DYNAMO_ENDPOINT: "http://localstack:4566"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: fakeMyKeyId
+      AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
+    networks:
+      - services-network
+
+  migrations:
+    build: ./migrations
+    depends_on:
+      - localstack
+    environment:
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    networks:
+      - services-network
+    volumes:
+      - ./migrations:/app
+
+networks:
+  services-network:
+    driver: bridge

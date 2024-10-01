@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  python3.8
+  FIAP Health Med
+
+Globals:
+  Function:
+    Timeout: 10
+
+Resources:
+  AppointmentService:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      MemorySize: 256
+      Events:
+        ApiEvents:
+          Type: HttpApi
+          Properties:
+            Path: /appointment_service
+            Method: ANY
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./appointment_service
+      DockerTag: python3.8-v1
+
+  AppointmentServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AppointmentService}"
+      RetentionInDays: 30
+
+  AuthService:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      MemorySize: 256
+      Events:
+        ApiEvents:
+          Type: HttpApi
+          Properties:
+            Path: /auth_service
+            Method: ANY
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./auth_service
+      DockerTag: python3.8-v1
+
+  AuthServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AuthService}"
+      RetentionInDays: 30
+
+  UserService:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      MemorySize: 256
+      Events:
+        ApiEvents:
+          Type: HttpApi
+          Properties:
+            Path: /user_service
+            Method: ANY
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./user_service
+      DockerTag: python3.8-v1
+
+  UserServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${UserService}"
+      RetentionInDays: 30
+
+  AuthTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: auth
+      PrimaryKey:
+        Name: email
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  UsersTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: users
+      PrimaryKey:
+        Name: email
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  AppointmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: appointments
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: doctor_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      GlobalSecondaryIndexes:
+        - IndexName: doctor_email-index
+          KeySchema:
+            - AttributeName: doctor_email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+
+  AvailabilityTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: availability
+      AttributeDefinitions:
+        - AttributeName: doctor_email
+          AttributeType: S
+        - AttributeName: day_time_slot
+          AttributeType: S
+      KeySchema:
+        - AttributeName: doctor_email
+          KeyType: HASH
+        - AttributeName: day_time_slot
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+Outputs:
+  APIGatewayURL:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/"
+
+  AppointmentService:
+    Description: "FastAPI Lambda AppointmentService ARN"
+    Value: !GetAtt AppointmentService.Arn
+
+  AuthService:
+    Description: "FastAPI Lambda AuthService ARN"
+    Value: !GetAtt AuthService.Arn
+
+  UserService:
+    Description: "FastAPI Lambda  ARN"
+    Value: !GetAtt UserService.Arn
+
+  AppointmentServiceIamRole:
+    Description: "Implicit IAM Role created for FastAPI AppointmentService"
+    Value: !GetAtt AppointmentServiceRole.Arn
+
+  AuthServiceIamRole:
+    Description: "Implicit IAM Role created for FastAPI AuthService"
+    Value: !GetAtt AuthServiceRole.Arn
+
+  UserServiceIamRole:
+    Description: "Implicit IAM Role created for FastAPI UserService"
+    Value: !GetAtt UserServiceRole.Arn
+
+  AuthTableName:
+    Description: "Auth Table Name"
+    Value: !Ref AuthTable
+  UsersTableName:
+    Description: "Users Table Name"
+    Value: !Ref UsersTable
+  AppointmentsTableName:
+    Description: "Appointments Table Name"
+    Value: !Ref AppointmentsTable
+  AvailabilityTableName:
+    Description: "Availability Table Name"
+    Value: !Ref AvailabilityTable

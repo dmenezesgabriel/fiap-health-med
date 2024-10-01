@@ -1,79 +1,404 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  python3.8
-  FIAP Health Med
+  FIAP Health Med - ECS Fargate Deployment
 
 Globals:
   Function:
     Timeout: 10
 
 Resources:
-  AppointmentService:
-    Type: AWS::Serverless::Function
+  ECSCluster:
+    Type: AWS::ECS::Cluster
     Properties:
-      PackageType: Image
-      MemorySize: 256
-      Events:
-        ApiEvents:
-          Type: HttpApi
-          Properties:
-            Path: /appointment_service
-            Method: ANY
-    Metadata:
-      Dockerfile: Dockerfile
-      DockerContext: ./appointment_service
-      DockerTag: python3.12-v2
+      ClusterName: FIAPHealthMedCluster
 
-  AppointmentServiceLogGroup:
-    Type: AWS::Logs::LogGroup
+  VPC:
+    Type: AWS::EC2::VPC
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${AppointmentService}"
-      RetentionInDays: 30
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  ECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - ecs-tasks.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        Policies:
+          - PolicyName: CloudWatchLogsPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource:
+                    - !GetAtt AppointmentServiceLogGroup.Arn
+                    - !GetAtt AuthServiceLogGroup.Arn
+                    - !GetAtt UserServiceLogGroup.Arn
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt AuthTable.Arn
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt AppointmentsTable.Arn
+                  - !GetAtt AvailabilityTable.Arn
+
+  AppointmentServiceTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: appointment-service
+        Cpu: "256"
+        Memory: "512"
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        ExecutionRoleArn: !Ref ECSTaskExecutionRole
+        TaskRoleArn: !Ref ECSTaskRole
+        ContainerDefinitions:
+          - Name: appointment-service
+            Image: dmenezesgabriel/appointment-service:latest
+            PortMappings:
+              - ContainerPort: 8000
+            Environment:
+              - Name: AWS_DEFAULT_REGION
+                Value: !Ref AWS::Region
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Ref AppointmentServiceLogGroup
+                awslogs-region: !Ref AWS::Region
+                awslogs-stream-prefix: ecs
+
+  AuthServiceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: auth-service
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: auth-service
+          Image: dmenezesgabriel/auth-service:latest
+          PortMappings:
+            - ContainerPort: 8000
+          Environment:
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AuthServiceLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  UserServiceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: user-service
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Ref ECSTaskRole
+      ContainerDefinitions:
+        - Name: user-service
+          Image: dmenezesgabriel/user-service:latest
+          PortMappings:
+            - ContainerPort: 8000
+          Environment:
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref UserServiceLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ALB
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: text/plain
+            MessageBody: "Not Found"
+            StatusCode: "404"
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+
+  AppointmentServiceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ALB
+    Properties:
+      HealthCheckPath: /appointment_service/docs
+      Name: AppointmentService
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  AuthServiceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ALB
+    Properties:
+      HealthCheckPath: /auth_service/docs
+      Name: AuthService
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  UserServiceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ALB
+    Properties:
+      HealthCheckPath: /user_service/docs
+      Name: UserService
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  AppointmentServiceListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AppointmentServiceTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/appointment_service/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 1
+
+  AuthServiceListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AuthServiceTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/auth_service/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 2
+
+  UserServiceListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref UserServiceTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/user_service/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 3
+
+  AppointmentService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - AppointmentServiceListenerRule
+    Properties:
+      ServiceName: AppointmentService
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref AppointmentServiceTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: appointment-service
+          ContainerPort: 8000
+          TargetGroupArn: !Ref AppointmentServiceTargetGroup
 
   AuthService:
-    Type: AWS::Serverless::Function
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - AuthServiceListenerRule
     Properties:
-      PackageType: Image
-      MemorySize: 256
-      Events:
-        ApiEvents:
-          Type: HttpApi
-          Properties:
-            Path: /auth_service
-            Method: ANY
-    Metadata:
-      Dockerfile: Dockerfile
-      DockerContext: ./auth_service
-      DockerTag: python3.12-v2
-
-  AuthServiceLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AuthService}"
-      RetentionInDays: 30
+      ServiceName: AuthService
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref AuthServiceTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: auth-service
+          ContainerPort: 8000
+          TargetGroupArn: !Ref AuthServiceTargetGroup
 
   UserService:
-    Type: AWS::Serverless::Function
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - UserServiceListenerRule
     Properties:
-      PackageType: Image
-      MemorySize: 256
-      Events:
-        ApiEvents:
-          Type: HttpApi
-          Properties:
-            Path: /user_service
-            Method: ANY
-    Metadata:
-      Dockerfile: Dockerfile
-      DockerContext: ./user_service
-      DockerTag: python3.12-v2
-
-  UserServiceLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${UserService}"
-      RetentionInDays: 30
+      ServiceName: UserService
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref UserServiceTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+      LoadBalancers:
+        - ContainerName: user-service
+          ContainerPort: 8000
+          TargetGroupArn: !Ref UserServiceTargetGroup
 
   AuthTable:
     Type: AWS::Serverless::SimpleTable
@@ -141,44 +466,56 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
+  AppointmentServiceLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/appointment-service
+        RetentionInDays: 30
+
+    AuthServiceLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/auth-service
+        RetentionInDays: 30
+
+    UserServiceLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/user-service
+        RetentionInDays: 30
 Outputs:
-  APIGatewayURL:
-    Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/"
+  ECSClusterName:
+    Description: "ECS Cluster Name"
+    Value: !Ref ECSCluster
 
-  AppointmentService:
-    Description: "FastAPI Lambda AppointmentService ARN"
-    Value: !GetAtt AppointmentService.Arn
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref VPC
 
-  AuthService:
-    Description: "FastAPI Lambda AuthService ARN"
-    Value: !GetAtt AuthService.Arn
+  PublicSubnet1:
+    Description: "Public Subnet 1"
+    Value: !Ref PublicSubnet1
 
-  UserService:
-    Description: "FastAPI Lambda  ARN"
-    Value: !GetAtt UserService.Arn
-
-  AppointmentServiceIamRole:
-    Description: "Implicit IAM Role created for FastAPI AppointmentService"
-    Value: !GetAtt AppointmentServiceRole.Arn
-
-  AuthServiceIamRole:
-    Description: "Implicit IAM Role created for FastAPI AuthService"
-    Value: !GetAtt AuthServiceRole.Arn
-
-  UserServiceIamRole:
-    Description: "Implicit IAM Role created for FastAPI UserService"
-    Value: !GetAtt UserServiceRole.Arn
+  PublicSubnet2:
+    Description: "Public Subnet 2"
+    Value: !Ref PublicSubnet2
 
   AuthTableName:
     Description: "Auth Table Name"
     Value: !Ref AuthTable
+
   UsersTableName:
     Description: "Users Table Name"
     Value: !Ref UsersTable
+
   AppointmentsTableName:
     Description: "Appointments Table Name"
     Value: !Ref AppointmentsTable
+
   AvailabilityTableName:
     Description: "Availability Table Name"
     Value: !Ref AvailabilityTable
+
+  ALBDNSName:
+    Description: "Application Load Balancer DNS Name"
+    Value: !GetAtt ALB.DNSName

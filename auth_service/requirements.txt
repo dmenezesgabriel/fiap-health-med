@@ -3,3 +3,5 @@ fastapi
 pyjwt
 uvicorn
 pydantic[email]
+passlib
+python-multipart

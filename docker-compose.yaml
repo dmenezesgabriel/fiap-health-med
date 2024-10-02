@@ -1,3 +1,4 @@
+# docker-compose.yml
 services:
   auth_service:
     build: ./auth_service
@@ -11,14 +12,13 @@ services:
       - AWS_ENDPOINT_URL=http://localstack:4566
     volumes:
       - ./auth_service:/var/task
-
     networks:
       - services-network
 
-  user_service:
-    build: ./user_service
+  availability_service:
+    build: ./availability_service
     ports:
-      - "8002:8000"
+      - "8004:8000"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       - AWS_ACCESS_KEY_ID=fakeMyKeyId
@@ -28,7 +28,7 @@ services:
     networks:
       - services-network
     volumes:
-      - ./user_service:/var/task
+      - ./availability_service:/var/task
 
   appointment_service:
     build: ./appointment_service
@@ -55,7 +55,6 @@ services:
       - DEBUG=${DEBUG-}
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./data/localstack_volume}:/var/lib/localstack"
-      # - "./conf/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh" # ready hook
       - "/var/run/docker.sock:/var/run/docker.sock"
     networks:
       - services-network

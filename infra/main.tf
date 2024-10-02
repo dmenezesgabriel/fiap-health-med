@@ -35,7 +35,7 @@ variable "apps" {
   default = [
     {
       name            = "auth-service"
-      container_image = "dmenezesgabriel/fiap-health-auth_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
+      container_image = "dmenezesgabriel/fiap-health-auth_service:2ce4869cd457273d975fbf0541235aa08f5931b4"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"
@@ -47,7 +47,7 @@ variable "apps" {
     },
     {
       name            = "availability-service"
-      container_image = "dmenezesgabriel/fiap-health-availability_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
+      container_image = "dmenezesgabriel/fiap-health-availability_service:2ce4869cd457273d975fbf0541235aa08f5931b4"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"
@@ -59,7 +59,7 @@ variable "apps" {
     },
     {
       name            = "appointment-service"
-      container_image = "dmenezesgabriel/fiap-health-appointment_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
+      container_image = "dmenezesgabriel/fiap-health-appointment_service:2ce4869cd457273d975fbf0541235aa08f5931b4"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"

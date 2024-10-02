@@ -1,6 +1,9 @@
 import logging
 import os
+import smtplib
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Dict, List, Tuple
 
 import boto3
@@ -21,6 +24,13 @@ dynamodb = boto3.resource(
     "dynamodb", endpoint_url=os.getenv("AWS_ENDPOINT_URL")
 )
 appointment_table = dynamodb.Table("appointments")
+
+# Email configuration
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+SEND_EMAIL_ENABLED = os.getenv("SEND_EMAIL_ENABLED", False)
 
 
 class Appointment(BaseModel):
@@ -133,6 +143,17 @@ class AppointmentService:
         if not success:
             logger.error(f"Failed to create appointment: {appointment.id}")
             return False, "Failed to create appointment"
+
+        # Send email notification to the doctor
+        if SEND_EMAIL_ENABLED:
+            email_sent = AppointmentService.send_email_notification(
+                appointment
+            )
+            if not email_sent:
+                logger.warning(
+                    f"Failed to send email notification for appointment: {appointment.id}"
+                )
+
         logger.info(f"Appointment created successfully: {appointment.id}")
         return True, "Appointment created successfully"
 
@@ -214,6 +235,40 @@ class AppointmentService:
             )
 
         return formatted_appointments
+
+    @staticmethod
+    def send_email_notification(appointment: Appointment) -> bool:
+        logger.info(f"sending email to {appointment.doctor_email}")
+        subject = "Health&Med - Nova consulta agendada"
+        body = f"""
+        <html>
+            <body>
+                <p>Olá, Dr. {appointment.doctor_email}!</p>
+                <p>Você tem uma nova consulta marcada!</p>
+                <p>Paciente: {appointment.patient_email}</p>
+                <p>Data e horário: {appointment.date_time}</p>
+            </body>
+        </html>
+        """
+
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = appointment.doctor_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "html"))
+
+        try:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.send_message(msg)
+            logger.info(
+                f"Email notification sent successfully for appointment: {appointment.id}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {str(e)}")
+            return False
 
 
 @app.post("/appointments")

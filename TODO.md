@@ -17,6 +17,8 @@ Considerações importantes:
 arquitetura e decidir como será feito o desenvolvimento, aplicando os
 conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
 
+## Requisitos Funcionais
+
 1. [x] Cadastro do Usuário (Médico)
        O médico deverá poder se cadastrar, preenchendo os campos
        obrigatórios: Nome, CPF, Número CRM, E-mail e Senha.
@@ -40,18 +42,19 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
        disponíveis do médico.
        O paciente poderá selecionar o horário de preferência e realizar o
        agendamento.
-8. Notificação de consulta marcada (Médico)
-   Após o agendamento, feito pelo usuário Paciente, o médico deverá
-   receber um e-mail contendo:
-   Título do e-mail:
-   ”Health&Med - Nova consulta agendada”
-   Corpo do e-mail:
-   ”Olá, Dr. {nome_do_médico}!
-   Você tem uma nova consulta marcada!
-   Paciente: {nome_do_paciente}.
-   Data e horário: {data} às {horário_agendado}.”
-   Hackathon 3
-   Requisitos Não Funcionais
+8. [x] Notificação de consulta marcada (Médico)
+       Após o agendamento, feito pelo usuário Paciente, o médico deverá
+       receber um e-mail contendo:
+       Título do e-mail:
+       ”Health&Med - Nova consulta agendada”
+       Corpo do e-mail:
+       ”Olá, Dr. {nome_do_médico}!
+       Você tem uma nova consulta marcada!
+       Paciente: {nome_do_paciente}.
+       Data e horário: {data} às {horário_agendado}.”
+
+## Requisitos Não Funcionais
+
 9. [x] Concorrência de Agendamentos
        O sistema deve ser capaz de suportar múltiplos acessos simultâneos e
        garantir que apenas uma marcação de consulta seja permitida para um

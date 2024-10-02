@@ -41,6 +41,8 @@ services:
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
       - AVAILABILITY_SERVICE_URL=http://availability_service:8000/availability_service
+    env_file:
+      - .env
     networks:
       - services-network
     volumes:

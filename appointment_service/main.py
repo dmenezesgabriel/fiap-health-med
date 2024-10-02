@@ -1,8 +1,7 @@
-# appointment_service/main.py
 import logging
 import os
 from datetime import datetime, time
-from typing import List
+from typing import Dict, List
 
 import boto3
 from botocore.exceptions import ClientError
@@ -73,7 +72,7 @@ class AppointmentRepository:
     async def get_doctor_appointments(doctor_email: str):
         try:
             response = appointment_table.query(
-                IndexName="doctor_email-index",
+                IndexName="DoctorDateTimeIndex",
                 KeyConditionExpression="doctor_email = :de",
                 ExpressionAttributeValues={":de": doctor_email},
             )
@@ -144,11 +143,26 @@ class AppointmentService:
         return True, "Appointment created successfully"
 
     @staticmethod
-    async def get_doctor_appointments(doctor_email: str):
+    async def get_doctor_appointments(
+        doctor_email: str,
+    ) -> Dict[str, List[Dict[str, str]]]:
         logger.info(f"Retrieving appointments for doctor: {doctor_email}")
-        return await AppointmentRepository.get_doctor_appointments(
+        appointments = await AppointmentRepository.get_doctor_appointments(
             doctor_email
         )
+
+        # Refactor the appointment format to match availability structure
+        formatted_appointments = {}
+        for appt in appointments:
+            appointment_date = appt["date_time"].split("T")[0]
+            appointment_time = appt["date_time"].split("T")[1][:5]
+            if appointment_date not in formatted_appointments:
+                formatted_appointments[appointment_date] = []
+            formatted_appointments[appointment_date].append(
+                {"start_time": appointment_time}
+            )
+
+        return formatted_appointments
 
     @staticmethod
     async def get_doctor_availability(doctor_email: str):
@@ -199,9 +213,7 @@ async def get_doctor_appointments(doctor_email: str):
     appointments = await AppointmentService.get_doctor_appointments(
         doctor_email
     )
-    logger.info(
-        f"Retrieved {len(appointments)} appointments for doctor: {doctor_email}"
-    )
+    logger.info(f"Retrieved appointments for doctor: {doctor_email}")
     return appointments
 
 

@@ -1,7 +1,5 @@
-# migrations/main.py
 import logging
 import os
-import time
 
 import boto3
 from botocore.exceptions import ClientError
@@ -99,41 +97,15 @@ def create_tables():
         )
     )
 
-    # Wait for tables to be created
     for table in tables:
         try:
-            table.meta.client.get_waiter("table_exists").wait(
-                TableName=table.name
+            table.wait_until_exists()
+            logger.info(f"Table {table.table_name} created successfully.")
+        except ClientError as e:
+            logger.error(
+                f"Error creating table: {e.response['Error']['Message']}"
             )
-            logger.info(f"Table created successfully: {table.name}")
-        except ClientError as e:
-            logger.error(f"Error creating table {table.name}: {e}")
-
-
-def delete_tables():
-    dynamodb = boto3.resource(
-        "dynamodb", endpoint_url=os.getenv("AWS_ENDPOINT_URL")
-    )
-
-    table_names = ["auth", "appointments", "availability"]
-
-    for table_name in table_names:
-        try:
-            table = dynamodb.Table(table_name)
-            table.delete()
-            logger.info(f"Table deleted successfully: {table_name}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                logger.info(f"Table does not exist: {table_name}")
-            else:
-                logger.error(f"Error deleting table {table_name}: {e}")
 
 
 if __name__ == "__main__":
-    logger.info("Starting migration process...")
-
-    # Uncomment the next line if you want to delete existing tables before creating new ones
-    # delete_tables()
-
     create_tables()
-    logger.info("Migration process completed")

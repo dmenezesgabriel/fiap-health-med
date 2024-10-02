@@ -11,7 +11,8 @@ services:
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
     volumes:
-      - ./auth_service:/var/task
+      - ./auth_service:/app
+
     networks:
       - services-network
 
@@ -28,7 +29,7 @@ services:
     networks:
       - services-network
     volumes:
-      - ./availability_service:/var/task
+      - ./availability_service:/app
 
   appointment_service:
     build: ./appointment_service
@@ -46,7 +47,7 @@ services:
     networks:
       - services-network
     volumes:
-      - ./appointment_service:/var/task
+      - ./appointment_service:/app
 
   localstack:
     image: localstack/localstack:latest

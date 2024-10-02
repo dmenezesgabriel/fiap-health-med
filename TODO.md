@@ -70,9 +70,9 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
 
 11. [x] Desenvolvimento de um MVP da solução, contemplando os requisitos
         funcionais e não funcionais listados acima.
-12. [ ] Pipeline CI/CD
+12. [x] Pipeline CI/CD
         a. Demonstração do pipeline de deploy da aplicação.
-13. [ ] Testes unitários
+13. [x] Testes unitários
         a. Implantação de testes unitários que garantam o funcionamento da
         solução
 14. [x] Não há a necessidade do desenvolvimento do Frontend da Solução.

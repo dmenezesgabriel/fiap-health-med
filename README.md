@@ -3,7 +3,7 @@
 This is a medical consultations system MVP made for FIAP Hackaton
 Postgraduate degree in software architecture.
 
-![archtecture](docs/archtecture.drawio.svg)
+![architecture](docs/architecture.drawio.svg)
 
 ## Requirements
 

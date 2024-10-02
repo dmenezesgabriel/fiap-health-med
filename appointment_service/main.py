@@ -122,17 +122,27 @@ class AppointmentService:
                 appointment.doctor_email
             )
         )
+
+        # Check for conflicting appointments within 1 hour on the same day
         is_conflicting = any(
-            appt["date_time"] == appointment.date_time
+            appt["date_time"].split("T")[0] == appointment_date
+            and abs(
+                (
+                    datetime.fromisoformat(appt["date_time"])
+                    - datetime.fromisoformat(appointment.date_time)
+                ).total_seconds()
+            )
+            < 3600  # less than 1 hour difference
             for appt in existing_appointments
         )
+
         if is_conflicting:
             logger.warning(
-                f"Appointment time conflicts with an existing appointment: {appointment.date_time}"
+                f"Appointment time conflicts with an existing appointment within 1 hour: {appointment.date_time}"
             )
             return (
                 False,
-                "Appointment time conflicts with an existing appointment",
+                "Appointment time conflicts with an existing appointment within 1 hour",
             )
 
         success = await AppointmentRepository.create_appointment(appointment)

@@ -1,12 +1,12 @@
-# availability_service/main.py
 import logging
 import os
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr
 
 # Configure logging
@@ -64,9 +64,32 @@ class AvailabilityDelete(BaseModel):
     end_time: str
 
 
-class AvailabilityRepository:
-    @staticmethod
-    async def add_availability(availability: DailyAvailability):
+# --- Repository Port (Abstract class for Dependency Injection) ---
+class AvailabilityRepositoryPort(ABC):
+    @abstractmethod
+    async def add_availability(self, availability: DailyAvailability) -> bool:
+        pass
+
+    @abstractmethod
+    async def get_doctor_availability(self, doctor_email: str) -> dict:
+        pass
+
+    @abstractmethod
+    async def update_availability(
+        self, doctor_email: str, update: AvailabilityUpdate
+    ) -> bool:
+        pass
+
+    @abstractmethod
+    async def delete_availability(
+        self, doctor_email: str, delete: AvailabilityDelete
+    ) -> bool:
+        pass
+
+
+# --- Concrete Implementation of Repository ---
+class AvailabilityRepository(AvailabilityRepositoryPort):
+    async def add_availability(self, availability: DailyAvailability) -> bool:
         logger.info(
             f"Attempting to add availability for doctor: {availability.doctor_email}"
         )
@@ -93,8 +116,7 @@ class AvailabilityRepository:
             )
             return False
 
-    @staticmethod
-    async def get_doctor_availability(doctor_email: str):
+    async def get_doctor_availability(self, doctor_email: str) -> dict:
         logger.info(
             f"Attempting to retrieve availability for doctor: {doctor_email}"
         )
@@ -122,10 +144,9 @@ class AvailabilityRepository:
             )
             return {}
 
-    @staticmethod
     async def update_availability(
-        doctor_email: str, update: AvailabilityUpdate
-    ):
+        self, doctor_email: str, update: AvailabilityUpdate
+    ) -> bool:
         logger.info(
             f"Attempting to update availability for doctor: {doctor_email}"
         )
@@ -175,10 +196,9 @@ class AvailabilityRepository:
             )
             return False
 
-    @staticmethod
     async def delete_availability(
-        doctor_email: str, delete: AvailabilityDelete
-    ):
+        self, doctor_email: str, delete: AvailabilityDelete
+    ) -> bool:
         logger.info(
             f"Attempting to delete availability for doctor: {doctor_email}"
         )
@@ -203,9 +223,47 @@ class AvailabilityRepository:
             return False
 
 
+# --- Availability Service ---
+class AvailabilityService:
+    def __init__(self, repository: AvailabilityRepositoryPort):
+        self.repository = repository
+
+    async def add_availability(self, availability: DailyAvailability):
+        return await self.repository.add_availability(availability)
+
+    async def get_doctor_availability(self, doctor_email: str):
+        return await self.repository.get_doctor_availability(doctor_email)
+
+    async def update_availability(
+        self, doctor_email: str, update: AvailabilityUpdate
+    ):
+        return await self.repository.update_availability(doctor_email, update)
+
+    async def delete_availability(
+        self, doctor_email: str, delete: AvailabilityDelete
+    ):
+        return await self.repository.delete_availability(doctor_email, delete)
+
+
+# --- Dependency Injection Setup ---
+def get_availability_repository():
+    return AvailabilityRepository()
+
+
+def get_availability_service(
+    repository: AvailabilityRepositoryPort = Depends(
+        get_availability_repository
+    ),
+):
+    return AvailabilityService(repository)
+
+
+# --- API Routes ---
 @app.post("/doctors/{doctor_email}/availability")
 async def add_doctor_availability(
-    doctor_email: str, availability: DailyAvailability
+    doctor_email: str,
+    availability: DailyAvailability,
+    service: AvailabilityService = Depends(get_availability_service),
 ):
     logger.info(
         f"Received request to add availability for doctor: {doctor_email}"
@@ -218,7 +276,7 @@ async def add_doctor_availability(
             status_code=400,
             detail="Doctor email in path must match email in body",
         )
-    success = await AvailabilityRepository.add_availability(availability)
+    success = await service.add_availability(availability)
     if not success:
         logger.error(f"Failed to add availability for doctor: {doctor_email}")
         raise HTTPException(
@@ -229,27 +287,28 @@ async def add_doctor_availability(
 
 
 @app.get("/doctors/{doctor_email}/availability")
-async def get_doctor_availability(doctor_email: str):
+async def get_doctor_availability(
+    doctor_email: str,
+    service: AvailabilityService = Depends(get_availability_service),
+):
     logger.info(
         f"Received request to get availability for doctor: {doctor_email}"
     )
-    availability = await AvailabilityRepository.get_doctor_availability(
-        doctor_email
-    )
+    availability = await service.get_doctor_availability(doctor_email)
     logger.info(f"Retrieved availability for doctor: {doctor_email}")
     return availability
 
 
 @app.put("/doctors/{doctor_email}/availability")
 async def update_doctor_availability(
-    doctor_email: str, update: AvailabilityUpdate
+    doctor_email: str,
+    update: AvailabilityUpdate,
+    service: AvailabilityService = Depends(get_availability_service),
 ):
     logger.info(
         f"Received request to update availability for doctor: {doctor_email}"
     )
-    success = await AvailabilityRepository.update_availability(
-        doctor_email, update
-    )
+    success = await service.update_availability(doctor_email, update)
     if not success:
         logger.error(
             f"Failed to update availability for doctor: {doctor_email}"
@@ -265,14 +324,14 @@ async def update_doctor_availability(
 
 @app.delete("/doctors/{doctor_email}/availability")
 async def delete_doctor_availability(
-    doctor_email: str, delete: AvailabilityDelete
+    doctor_email: str,
+    delete: AvailabilityDelete,
+    service: AvailabilityService = Depends(get_availability_service),
 ):
     logger.info(
         f"Received request to delete availability for doctor: {doctor_email}"
     )
-    success = await AvailabilityRepository.delete_availability(
-        doctor_email, delete
-    )
+    success = await service.delete_availability(doctor_email, delete)
     if not success:
         logger.error(
             f"Failed to delete availability for doctor: {doctor_email}"

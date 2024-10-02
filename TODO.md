@@ -35,11 +35,11 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
 6. [x] Busca por Médicos (Paciente)
        O sistema deve permitir que o paciente visualize a listagem dos
        médicos disponíveis.
-7. Agendamento de Consultas (Paciente)
-   Após selecionar o médico, o paciente deve visualizar os dias e horários
-   disponíveis do médico.
-   O paciente poderá selecionar o horário de preferência e realizar o
-   agendamento.
+7. [x] Agendamento de Consultas (Paciente)
+       Após selecionar o médico, o paciente deve visualizar os dias e horários
+       disponíveis do médico.
+       O paciente poderá selecionar o horário de preferência e realizar o
+       agendamento.
 8. Notificação de consulta marcada (Médico)
    Após o agendamento, feito pelo usuário Paciente, o médico deverá
    receber um e-mail contendo:

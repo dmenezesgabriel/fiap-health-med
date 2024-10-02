@@ -80,6 +80,23 @@ class Token(BaseModel):
     token_type: str
 
 
+# Custom Exceptions
+class UserAlreadyExistsException(Exception):
+    pass
+
+
+class UserNotFoundException(Exception):
+    pass
+
+
+class InvalidCredentialsException(Exception):
+    pass
+
+
+class NotAuthorizedException(Exception):
+    pass
+
+
 # Repository Port
 class AuthRepositoryPort(ABC):
     @abstractmethod
@@ -137,7 +154,7 @@ class DynamoDBAuthRepository(AuthRepositoryPort):
                 == "ConditionalCheckFailedException"
             ):
                 logger.warning(f"User already exists: {user.email}")
-                return False
+                raise UserAlreadyExistsException
             logger.error(
                 f"Error creating user: {e.response['Error']['Message']}"
             )
@@ -191,9 +208,9 @@ class AuthService:
     async def authenticate_user(self, email: str, password: str):
         user = await self.repository.get_user(email)
         if not user:
-            return False
+            raise UserNotFoundException
         if not self.verify_password(password, user.hashed_password):
-            return False
+            raise InvalidCredentialsException
         return user
 
     def create_access_token(
@@ -213,10 +230,10 @@ class AuthService:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             email: str = payload.get("sub")
             if email is None:
-                raise HTTPException(status_code=401, detail="Invalid token")
+                raise InvalidCredentialsException
             return TokenData(email=email)
         except jwt.PyJWTError:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise InvalidCredentialsException
 
     async def create_patient(self, user: PatientCreate) -> PatientResponse:
         hashed_password = self.get_password_hash(user.password)
@@ -225,9 +242,7 @@ class AuthService:
         )
         success = await self.repository.create_user(db_user)
         if not success:
-            raise HTTPException(
-                status_code=400, detail="Email already registered"
-            )
+            raise UserAlreadyExistsException
         return PatientResponse(**user.dict())
 
     async def create_doctor(self, user: DoctorCreate) -> DoctorResponse:
@@ -237,19 +252,15 @@ class AuthService:
         )
         success = await self.repository.create_user(db_user)
         if not success:
-            raise HTTPException(
-                status_code=400, detail="Email already registered"
-            )
+            raise UserAlreadyExistsException
         return DoctorResponse(**user.dict())
 
     async def delete_user(self, email: str, current_user: UserInDB):
         if current_user.email != email:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to delete this user"
-            )
+            raise NotAuthorizedException
         success = await self.repository.delete_user(email)
         if not success:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise UserNotFoundException
         return {"message": "User deleted successfully"}
 
     async def get_all_doctors(self) -> List[DoctorResponse]:
@@ -266,11 +277,14 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    token_data = auth_service.decode_token(credentials.credentials)
-    user = await auth_service.repository.get_user(email=token_data.email)
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+    try:
+        token_data = auth_service.decode_token(credentials.credentials)
+        user = await auth_service.repository.get_user(email=token_data.email)
+        if user is None:
+            raise UserNotFoundException
+        return user
+    except InvalidCredentialsException:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 # Routes
@@ -278,16 +292,20 @@ async def get_current_user(
 async def create_patient(
     user: PatientCreate, auth_service: AuthService = Depends(get_auth_service)
 ):
-    logger.info(f"Received request to create patient: {user.email}")
-    return await auth_service.create_patient(user)
+    try:
+        return await auth_service.create_patient(user)
+    except UserAlreadyExistsException:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
 
 @app.post("/register/doctor", response_model=DoctorResponse)
 async def create_doctor(
     user: DoctorCreate, auth_service: AuthService = Depends(get_auth_service)
 ):
-    logger.info(f"Received request to create doctor: {user.email}")
-    return await auth_service.create_doctor(user)
+    try:
+        return await auth_service.create_doctor(user)
+    except UserAlreadyExistsException:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
 
 @app.delete("/users/{email}")
@@ -296,8 +314,14 @@ async def delete_user(
     current_user: UserInDB = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    logger.info(f"Received request to delete user: {email}")
-    return await auth_service.delete_user(email, current_user)
+    try:
+        return await auth_service.delete_user(email, current_user)
+    except UserNotFoundException:
+        raise HTTPException(status_code=404, detail="User not found")
+    except NotAuthorizedException:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to delete this user"
+        )
 
 
 @app.post("/login", response_model=Token)
@@ -305,20 +329,21 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    user = await auth_service.authenticate_user(
-        form_data.username, form_data.password
-    )
-    if not user:
+    try:
+        user = await auth_service.authenticate_user(
+            form_data.username, form_data.password
+        )
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = auth_service.create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    except (UserNotFoundException, InvalidCredentialsException):
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth_service.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @app.get("/users/me", response_model=PatientResponse | DoctorResponse)
@@ -344,5 +369,4 @@ async def verify_token(current_user: UserInDB = Depends(get_current_user)):
 
 @app.get("/doctors", response_model=List[DoctorResponse])
 async def list_doctors(auth_service: AuthService = Depends(get_auth_service)):
-    logger.info("Received request to list all doctors")
     return await auth_service.get_all_doctors()

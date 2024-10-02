@@ -32,9 +32,9 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
 5. [x] Autenticação do Usuário (Paciente)
        O sistema deve permitir que o paciente faça login usando o E-mail e
        Senha.
-6. Busca por Médicos (Paciente)
-   O sistema deve permitir que o paciente visualize a listagem dos
-   médicos disponíveis.
+6. [x] Busca por Médicos (Paciente)
+       O sistema deve permitir que o paciente visualize a listagem dos
+       médicos disponíveis.
 7. Agendamento de Consultas (Paciente)
    Após selecionar o médico, o paciente deve visualizar os dias e horários
    disponíveis do médico.
@@ -62,14 +62,14 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
     consultas agendadas.
     Entregáveis Mínimos
     Os grupos deverão entregar o seguinte:
-11. Desenvolvimento de um MVP da solução, contemplando os requisitos
-    funcionais e não funcionais listados acima.
+11. [x] Desenvolvimento de um MVP da solução, contemplando os requisitos
+        funcionais e não funcionais listados acima.
 12. Pipeline CI/CD
     a. Demonstração do pipeline de deploy da aplicação.
 13. Testes unitários
     a. Implantação de testes unitários que garantam o funcionamento da
     solução
-14. Não há a necessidade do desenvolvimento do Frontend da Solução.
+14. [x] Não há a necessidade do desenvolvimento do Frontend da Solução.
 15. Formato da entregável: Vídeo gravado que demonstre o funcionamento do
     sistema cumprindo os requisitos solicitados e Documentação escrita
     (README ou Arquivo)

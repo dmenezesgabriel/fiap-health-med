@@ -10,5 +10,5 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(root_path="/auth_service")
+app = FastAPI(root_path="/auth-service")
 app.include_router(router)

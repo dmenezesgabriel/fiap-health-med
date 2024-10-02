@@ -72,6 +72,20 @@ resource "aws_security_group_rule" "allow_from_alb" {
   description              = "Allow inbound traffic from ALB to ECS tasks"
 }
 
+resource "aws_service_discovery_private_dns_namespace" "this" {
+  name        = "${var.cluster_name}.local"
+  description = "Service Discovery Namespace for ${var.cluster_name}"
+  vpc         = var.vpc_id
+}
+
+output "service_discovery_namespace_id" {
+  value = aws_service_discovery_private_dns_namespace.this.id
+}
+
+output "service_discovery_namespace_name" {
+  value = aws_service_discovery_private_dns_namespace.this.name
+}
+
 output "cluster_id" {
   value = aws_ecs_cluster.main.id
 }

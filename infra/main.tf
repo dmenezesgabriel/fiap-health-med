@@ -35,39 +35,39 @@ variable "apps" {
   default = [
     {
       name            = "auth-service"
-      container_image = "dmenezesgabriel/fiap-health-auth_service:afa4460cef2f4a322749ccc865469174a2f641b0"
+      container_image = "dmenezesgabriel/fiap-health-auth_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"
       desired_count   = 2
-      path_pattern    = "/auth_service*"
+      path_pattern    = "/auth-service*"
       environment_variables = {
         AWS_DEFAULT_REGION = "us-east-1"
       }
     },
     {
       name            = "availability-service"
-      container_image = "dmenezesgabriel/fiap-health-availability_service:afa4460cef2f4a322749ccc865469174a2f641b0"
+      container_image = "dmenezesgabriel/fiap-health-availability_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"
       desired_count   = 2
-      path_pattern    = "/availability_service*"
+      path_pattern    = "/availability-service*"
       environment_variables = {
         AWS_DEFAULT_REGION = "us-east-1"
       }
     },
     {
       name            = "appointment-service"
-      container_image = "dmenezesgabriel/fiap-health-appointment_service:afa4460cef2f4a322749ccc865469174a2f641b0"
+      container_image = "dmenezesgabriel/fiap-health-appointment_service:4c973ca70194144b86a3146be1e7cd2da0d61f07"
       container_port  = 8000
       cpu             = "256"
       memory          = "512"
       desired_count   = 2
-      path_pattern    = "/appointment_service*"
+      path_pattern    = "/appointment-service*"
       environment_variables = {
         AWS_DEFAULT_REGION       = "us-east-1"
-        AVAILABILITY_SERVICE_URL = ""
+        AVAILABILITY_SERVICE_URL = "http://availability-service.my-ecs-cluster.local:8000"
         SENDER_EMAIL             = ""
         SENDER_PASSWORD          = ""
         SEND_EMAIL_ENABLED       = ""
@@ -80,23 +80,34 @@ module "ecs_services" {
   source = "./ecs-service"
   count  = length(var.apps)
 
-  cluster_id                  = module.ecs_cluster.cluster_id
-  vpc_id                      = module.vpc.vpc_id
-  app_name                    = var.apps[count.index].name
-  container_image             = var.apps[count.index].container_image
-  container_port              = var.apps[count.index].container_port
-  cpu                         = var.apps[count.index].cpu
-  memory                      = var.apps[count.index].memory
-  desired_count               = var.apps[count.index].desired_count
-  subnet_ids                  = module.vpc.public_subnet_ids
-  task_execution_role_arn     = module.ecs_cluster.task_execution_role_arn
-  ecs_tasks_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
-  alb_security_group_id       = module.load_balancer.alb_security_group_id
-  lb_listener                 = module.load_balancer.lb_listener
-  target_group_arn            = module.load_balancer.target_group_arns[count.index]
-  environment_variables       = var.apps[count.index].environment_variables
+  cluster_id                     = module.ecs_cluster.cluster_id
+  vpc_id                         = module.vpc.vpc_id
+  app_name                       = var.apps[count.index].name
+  container_image                = var.apps[count.index].container_image
+  container_port                 = var.apps[count.index].container_port
+  cpu                            = var.apps[count.index].cpu
+  memory                         = var.apps[count.index].memory
+  desired_count                  = var.apps[count.index].desired_count
+  subnet_ids                     = module.vpc.public_subnet_ids
+  task_execution_role_arn        = module.ecs_cluster.task_execution_role_arn
+  ecs_tasks_security_group_id    = module.ecs_cluster.ecs_tasks_security_group_id
+  alb_security_group_id          = module.load_balancer.alb_security_group_id
+  lb_listener                    = module.load_balancer.lb_listener
+  target_group_arn               = module.load_balancer.target_group_arns[count.index]
+  environment_variables          = var.apps[count.index].environment_variables
+  enable_service_discovery       = true
+  service_discovery_namespace_id = module.ecs_cluster.service_discovery_namespace_id
 }
 
+resource "aws_security_group_rule" "allow_inter_service_communication" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 65535
+  protocol                 = "tcp"
+  source_security_group_id = module.ecs_cluster.ecs_tasks_security_group_id
+  security_group_id        = module.ecs_cluster.ecs_tasks_security_group_id
+  description              = "Allow communication between ECS tasks"
+}
 
 resource "aws_iam_role_policy" "auth_service_dynamodb_policy" {
   name = "auth_service-dynamodb-policy"
@@ -115,7 +126,7 @@ resource "aws_iam_role_policy" "auth_service_dynamodb_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = "arn:aws:dynamodb:*:*:table/my-auth_service-table"
+        Resource = "*"
       }
     ]
   })
@@ -139,7 +150,7 @@ resource "aws_iam_role_policy" "availability_service_dynamodb_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = "arn:aws:dynamodb:*:*:table/my-availability_service-table"
+        Resource = "*"
       }
     ]
   })
@@ -161,7 +172,7 @@ resource "aws_iam_role_policy" "appointment_service_dynamodb_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = "arn:aws:dynamodb:*:*:table/my-appointment_service-table"
+        Resource = "*"
       }
     ]
   })

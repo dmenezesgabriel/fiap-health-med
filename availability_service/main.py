@@ -9,5 +9,5 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(root_path="/availability_service")
+app = FastAPI(root_path="/availability-service")
 app.include_router(router)

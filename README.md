@@ -95,27 +95,6 @@ docker compose down -v
             └── dynamodb_appointment_repository.py
 ```
 
-# Log in to Docker Hub
+## Deploy
 
-docker login
-
-# Build and push Appointment Service
-
-cd appointment_service
-docker build -t dmenezesgabriel/appointment-service:v1 .
-docker push dmenezesgabriel/appointment-service:v1
-cd ..
-
-# Build and push Auth Service
-
-cd auth_service
-docker build -t dmenezesgabriel/auth-service:v1 .
-docker push dmenezesgabriel/auth-service:v1
-cd ..
-
-# Build and push User Service
-
-cd user_service
-docker build -t dmenezesgabriel/availability-service:v1 .
-docker push dmenezesgabriel/availability-service:v1
-cd ..
+Depending on the _Pull Request_ branch name pattern you will trigger a service test, build and publish a image to Docker Hub, so if i push a branch with pattern `feature:auth_service/_`it will trigger the`auth_service` workflow.

@@ -2,7 +2,7 @@
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import boto3
 import jwt
@@ -137,6 +137,28 @@ class AuthRepository:
                 f"Error deleting user: {e.response['Error']['Message']}"
             )
             return False
+
+    @staticmethod
+    async def get_all_doctors():
+        logger.info("Attempting to retrieve all doctors")
+        try:
+            response = table.scan(
+                FilterExpression="user_type = :ut",
+                ExpressionAttributeValues={":ut": "doctor"},
+            )
+            doctors = [
+                DoctorResponse(
+                    **{k: v for k, v in item.items() if k != "hashed_password"}
+                )
+                for item in response.get("Items", [])
+            ]
+            logger.info(f"Retrieved {len(doctors)} doctors")
+            return doctors
+        except ClientError as e:
+            logger.error(
+                f"Error retrieving doctors: {e.response['Error']['Message']}"
+            )
+            return []
 
 
 # Service
@@ -273,3 +295,10 @@ async def verify_token(current_user: UserInDB = Depends(get_current_user)):
     else:
         raise HTTPException(status_code=400, detail="Invalid user type")
     return {"message": "Token is valid", "user": user_response}
+
+
+@app.get("/doctors", response_model=List[DoctorResponse])
+async def list_doctors():
+    logger.info("Received request to list all doctors")
+    doctors = await AuthRepository.get_all_doctors()
+    return doctors

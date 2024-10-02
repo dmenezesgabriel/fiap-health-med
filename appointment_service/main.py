@@ -1,6 +1,7 @@
 import logging
 import os
 import smtplib
+import uuid
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -30,11 +31,10 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-SEND_EMAIL_ENABLED = os.getenv("SEND_EMAIL_ENABLED", False)
+SEND_EMAIL_ENABLED = os.getenv("SEND_EMAIL_ENABLED", "false").lower() == "true"
 
 
 class Appointment(BaseModel):
-    id: str
     doctor_email: str
     patient_email: str
     date_time: str
@@ -42,20 +42,24 @@ class Appointment(BaseModel):
 
 class AppointmentRepository:
     @staticmethod
-    async def create_appointment(appointment: Appointment):
+    async def create_appointment(appointment: Dict):
         try:
             appointment_table.put_item(
-                Item=appointment.dict(),
+                Item=appointment,
                 ConditionExpression="attribute_not_exists(id)",
             )
-            logger.info(f"Appointment created successfully: {appointment.id}")
+            logger.info(
+                f"Appointment created successfully: {appointment['id']}"
+            )
             return True
         except ClientError as e:
             if (
                 e.response["Error"]["Code"]
                 == "ConditionalCheckFailedException"
             ):
-                logger.warning(f"Appointment already exists: {appointment.id}")
+                logger.warning(
+                    f"Appointment already exists: {appointment['id']}"
+                )
                 return False
             logger.error(
                 f"Error creating appointment: {e.response['Error']['Message']}"
@@ -100,7 +104,8 @@ class AppointmentRepository:
 class AppointmentService:
     @staticmethod
     async def create_appointment(appointment: Appointment):
-        logger.info(f"Attempting to create appointment: {appointment.id}")
+        appointment_id = str(uuid.uuid4())
+        logger.info(f"Attempting to create appointment: {appointment_id}")
 
         availability, error_msg = AppointmentService.check_availability(
             appointment.doctor_email, appointment.date_time
@@ -115,11 +120,11 @@ class AppointmentService:
             )
         )
 
-        appointment_date = appointment.date_time.split("T")[0]
+        appointment_date = appointment.date_time.split(" ")[0]
         appointment_time = datetime.fromisoformat(appointment.date_time).time()
 
         is_conflicting = any(
-            appt["date_time"].split("T")[0] == appointment_date
+            appt["date_time"].split(" ")[0] == appointment_date
             and abs(
                 (
                     datetime.fromisoformat(appt["date_time"])
@@ -139,22 +144,26 @@ class AppointmentService:
                 "Appointment time conflicts with an existing appointment within 1 hour",
             )
 
-        success = await AppointmentRepository.create_appointment(appointment)
+        appointment_dict = appointment.dict()
+        appointment_dict["id"] = appointment_id
+        success = await AppointmentRepository.create_appointment(
+            appointment_dict
+        )
         if not success:
-            logger.error(f"Failed to create appointment: {appointment.id}")
+            logger.error(f"Failed to create appointment: {appointment_id}")
             return False, "Failed to create appointment"
 
         # Send email notification to the doctor
         if SEND_EMAIL_ENABLED:
             email_sent = AppointmentService.send_email_notification(
-                appointment
+                appointment_dict
             )
             if not email_sent:
                 logger.warning(
-                    f"Failed to send email notification for appointment: {appointment.id}"
+                    f"Failed to send email notification for appointment: {appointment_id}"
                 )
 
-        logger.info(f"Appointment created successfully: {appointment.id}")
+        logger.info(f"Appointment created successfully: {appointment_id}")
         return True, "Appointment created successfully"
 
     @staticmethod
@@ -175,7 +184,7 @@ class AppointmentService:
                 return False, "Failed to check availability"
 
             availability = response.json()
-            appointment_date = date_time.split("T")[0]
+            appointment_date = date_time.split(" ")[0]
             appointment_time = datetime.fromisoformat(date_time).time()
 
             date_part = appointment_date[0:10]
@@ -226,8 +235,8 @@ class AppointmentService:
 
         formatted_appointments = {}
         for appt in appointments:
-            appointment_date = appt["date_time"].split("T")[0]
-            appointment_time = appt["date_time"].split("T")[1][:5]
+            appointment_date = appt["date_time"].split(" ")[0]
+            appointment_time = appt["date_time"].split(" ")[1][:5]
             if appointment_date not in formatted_appointments:
                 formatted_appointments[appointment_date] = []
             formatted_appointments[appointment_date].append(
@@ -237,23 +246,23 @@ class AppointmentService:
         return formatted_appointments
 
     @staticmethod
-    def send_email_notification(appointment: Appointment) -> bool:
-        logger.info(f"sending email to {appointment.doctor_email}")
+    def send_email_notification(appointment: Dict) -> bool:
+        logger.info(f"sending email to {appointment['doctor_email']}")
         subject = "Health&Med - Nova consulta agendada"
         body = f"""
         <html>
             <body>
-                <p>Olá, Dr. {appointment.doctor_email}!</p>
+                <p>Olá, Dr. {appointment['doctor_email']}!</p>
                 <p>Você tem uma nova consulta marcada!</p>
-                <p>Paciente: {appointment.patient_email}</p>
-                <p>Data e horário: {appointment.date_time}</p>
+                <p>Paciente: {appointment['patient_email']}</p>
+                <p>Data e horário: {appointment['date_time']}</p>
             </body>
         </html>
         """
 
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = appointment.doctor_email
+        msg["To"] = appointment["doctor_email"]
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))
 
@@ -263,7 +272,7 @@ class AppointmentService:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.send_message(msg)
             logger.info(
-                f"Email notification sent successfully for appointment: {appointment.id}"
+                f"Email notification sent successfully for appointment: {appointment['id']}"
             )
             return True
         except Exception as e:
@@ -273,14 +282,12 @@ class AppointmentService:
 
 @app.post("/appointments")
 async def create_appointment(appointment: Appointment):
-    logger.info(f"Received request to create appointment: {appointment.id}")
+    logger.info(f"Received request to create appointment")
     success, message = await AppointmentService.create_appointment(appointment)
     if not success:
-        logger.warning(
-            f"Failed to create appointment: {appointment.id}. Reason: {message}"
-        )
+        logger.warning(f"Failed to create appointment. Reason: {message}")
         raise HTTPException(status_code=400, detail=message)
-    logger.info(f"Successfully created appointment: {appointment.id}")
+    logger.info(f"Successfully created appointment")
     return {"message": message}
 
 

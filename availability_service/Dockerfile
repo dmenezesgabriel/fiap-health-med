@@ -1,6 +1,4 @@
-FROM public.ecr.aws/docker/library/python:3.12-slim
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.4 /lambda-adapter /opt/extensions/lambda-adapter
-ENV PORT=8000
+FROM python:3.12-slim
 
 # Prevents Python from writing pyc files to disc (equivalent to python -B option)
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -14,4 +12,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
 
-CMD exec uvicorn --port=$PORT main:app --root-path /user_service
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

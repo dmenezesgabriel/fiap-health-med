@@ -9,7 +9,6 @@ from botocore.exceptions import ClientError
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -64,7 +63,6 @@ class AvailabilityDelete(BaseModel):
     end_time: str
 
 
-# --- Repository Port (Abstract class for Dependency Injection) ---
 class AvailabilityRepositoryPort(ABC):
     @abstractmethod
     async def add_availability(self, availability: DailyAvailability) -> bool:
@@ -87,7 +85,6 @@ class AvailabilityRepositoryPort(ABC):
         pass
 
 
-# --- Concrete Implementation of Repository ---
 class AvailabilityRepository(AvailabilityRepositoryPort):
     async def add_availability(self, availability: DailyAvailability) -> bool:
         logger.info(
@@ -223,7 +220,6 @@ class AvailabilityRepository(AvailabilityRepositoryPort):
             return False
 
 
-# --- Availability Service ---
 class AvailabilityService:
     def __init__(self, repository: AvailabilityRepositoryPort):
         self.repository = repository

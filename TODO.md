@@ -52,16 +52,19 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
    Data e horário: {data} às {horário_agendado}.”
    Hackathon 3
    Requisitos Não Funcionais
-9. Concorrência de Agendamentos
-   O sistema deve ser capaz de suportar múltiplos acessos simultâneos e
-   garantir que apenas uma marcação de consulta seja permitida para um
-   determinado horário.
-10. Validação de Conflito de Horários
-    O sistema deve validar a disponibilidade do horário selecionado em
-    tempo real, assegurando que não haja sobreposição de horários para
-    consultas agendadas.
-    Entregáveis Mínimos
+9. [x] Concorrência de Agendamentos
+       O sistema deve ser capaz de suportar múltiplos acessos simultâneos e
+       garantir que apenas uma marcação de consulta seja permitida para um
+       determinado horário.
+10. [x] Validação de Conflito de Horários
+        O sistema deve validar a disponibilidade do horário selecionado em
+        tempo real, assegurando que não haja sobreposição de horários para
+        consultas agendadas.
+
+## Entregáveis Mínimos
+
     Os grupos deverão entregar o seguinte:
+
 11. [x] Desenvolvimento de um MVP da solução, contemplando os requisitos
         funcionais e não funcionais listados acima.
 12. Pipeline CI/CD

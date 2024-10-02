@@ -40,6 +40,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
+      - AVAILABILITY_SERVICE_URL=http://availability_service:8000/availability_service
     networks:
       - services-network
     volumes:

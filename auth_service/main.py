@@ -3,7 +3,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import boto3
 import jwt
@@ -17,7 +17,6 @@ from fastapi.security import (
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,21 +25,15 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(root_path="/auth_service")
 
-# JWT settings
-SECRET_KEY = (
-    "your-secret-key"  # In a real application, use a secure secret key
-)
+SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Security scheme for token authentication
 security = HTTPBearer()
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# Models
 class UserBase(BaseModel):
     email: EmailStr
     name: str
@@ -80,7 +73,6 @@ class Token(BaseModel):
     token_type: str
 
 
-# Custom Exceptions
 class UserAlreadyExistsException(Exception):
     pass
 
@@ -97,7 +89,6 @@ class NotAuthorizedException(Exception):
     pass
 
 
-# Repository Port
 class AuthRepositoryPort(ABC):
     @abstractmethod
     async def get_user(self, email: str) -> Optional[UserInDB]:
@@ -116,7 +107,6 @@ class AuthRepositoryPort(ABC):
         pass
 
 
-# Repository Implementation
 class DynamoDBAuthRepository(AuthRepositoryPort):
     def __init__(self):
         self.dynamodb = boto3.resource(
@@ -194,7 +184,6 @@ class DynamoDBAuthRepository(AuthRepositoryPort):
             return []
 
 
-# Service
 class AuthService:
     def __init__(self, repository: AuthRepositoryPort):
         self.repository = repository
@@ -267,7 +256,6 @@ class AuthService:
         return await self.repository.get_all_doctors()
 
 
-# Dependency
 def get_auth_service():
     repository = DynamoDBAuthRepository()
     return AuthService(repository)
@@ -287,7 +275,6 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-# Routes
 @app.post("/register/patient", response_model=PatientResponse)
 async def create_patient(
     user: PatientCreate, auth_service: AuthService = Depends(get_auth_service)
@@ -346,7 +333,7 @@ async def login(
         )
 
 
-@app.get("/users/me", response_model=PatientResponse | DoctorResponse)
+@app.get("/users/me", response_model=Union[PatientResponse, DoctorResponse])
 async def read_users_me(current_user: UserInDB = Depends(get_current_user)):
     if current_user.user_type == "patient":
         return PatientResponse(**current_user.dict())

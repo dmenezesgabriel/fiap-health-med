@@ -1,14 +1,14 @@
 import logging
 import os
-from datetime import datetime, time
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Tuple
 
 import boto3
+import requests
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -21,7 +21,6 @@ dynamodb = boto3.resource(
     "dynamodb", endpoint_url=os.getenv("AWS_ENDPOINT_URL")
 )
 appointment_table = dynamodb.Table("appointments")
-availability_table = dynamodb.Table("availability")
 
 
 class Appointment(BaseModel):
@@ -93,29 +92,12 @@ class AppointmentService:
     async def create_appointment(appointment: Appointment):
         logger.info(f"Attempting to create appointment: {appointment.id}")
 
-        availability = await AppointmentService.get_doctor_availability(
-            appointment.doctor_email
+        availability, error_msg = AppointmentService.check_availability(
+            appointment.doctor_email, appointment.date_time
         )
-        appointment_date = appointment.date_time.split("T")[0]
-        appointment_time = datetime.fromisoformat(appointment.date_time).time()
 
-        if appointment_date not in availability:
-            logger.warning(
-                f"Selected date {appointment_date} is not available for doctor: {appointment.doctor_email}"
-            )
-            return False, "Selected date is not available"
-
-        is_available = any(
-            time.fromisoformat(slot["start_time"])
-            <= appointment_time
-            < time.fromisoformat(slot["end_time"])
-            for slot in availability[appointment_date]
-        )
-        if not is_available:
-            logger.warning(
-                f"Selected time {appointment_time} is not within doctor's availability: {appointment.doctor_email}"
-            )
-            return False, "Selected time is not within doctor's availability"
+        if not availability:
+            return False, error_msg
 
         existing_appointments = (
             await AppointmentRepository.get_doctor_appointments(
@@ -123,7 +105,9 @@ class AppointmentService:
             )
         )
 
-        # Check for conflicting appointments within 1 hour on the same day
+        appointment_date = appointment.date_time.split("T")[0]
+        appointment_time = datetime.fromisoformat(appointment.date_time).time()
+
         is_conflicting = any(
             appt["date_time"].split("T")[0] == appointment_date
             and abs(
@@ -153,6 +137,64 @@ class AppointmentService:
         return True, "Appointment created successfully"
 
     @staticmethod
+    def check_availability(
+        doctor_email: str, date_time: str
+    ) -> Tuple[bool, str]:
+        logger.info(
+            f"Checking availability for doctor {doctor_email} at {date_time}"
+        )
+        try:
+            response = requests.get(
+                f"{os.getenv('AVAILABILITY_SERVICE_URL')}/doctors/{doctor_email}/availability"
+            )
+            if response.status_code != 200:
+                logger.error(
+                    f"Failed to fetch availability from service. Status code: {response.status_code}"
+                )
+                return False, "Failed to check availability"
+
+            availability = response.json()
+            appointment_date = date_time.split("T")[0]
+            appointment_time = datetime.fromisoformat(date_time).time()
+
+            date_part = appointment_date[0:10]
+            if date_part not in availability:
+                logger.warning(
+                    f"Selected date {appointment_date} is not available for doctor: {doctor_email}"
+                )
+                logger.info(f"Available dates: {list(availability.keys())}")
+                return False, "Selected date is not available"
+
+            is_available = any(
+                datetime.strptime(slot["start_time"], "%H:%M").time()
+                <= appointment_time
+                < datetime.strptime(slot["end_time"], "%H:%M").time()
+                for slot in availability[date_part]
+            )
+
+            if not is_available:
+                logger.warning(
+                    f"Selected time {appointment_time} is not available for doctor: {doctor_email}"
+                )
+                logger.info(
+                    f"Available slots for {appointment_date}: {availability[date_part]}"
+                )
+                return False, "Selected time is not available"
+
+            logger.info(
+                f"Appointment time {appointment_time} is available for doctor: {doctor_email}"
+            )
+            return True, "Time is available"
+        except requests.RequestException as e:
+            logger.exception(f"Error while checking availability: {e}")
+            return False, "Error while checking availability"
+        except Exception as e:
+            logger.exception(
+                f"Unexpected error while checking availability: {e}"
+            )
+            return False, "Unexpected error while checking availability"
+
+    @staticmethod
     async def get_doctor_appointments(
         doctor_email: str,
     ) -> Dict[str, List[Dict[str, str]]]:
@@ -161,7 +203,6 @@ class AppointmentService:
             doctor_email
         )
 
-        # Refactor the appointment format to match availability structure
         formatted_appointments = {}
         for appt in appointments:
             appointment_date = appt["date_time"].split("T")[0]
@@ -173,33 +214,6 @@ class AppointmentService:
             )
 
         return formatted_appointments
-
-    @staticmethod
-    async def get_doctor_availability(doctor_email: str):
-        logger.info(f"Retrieving availability for doctor: {doctor_email}")
-        try:
-            response = availability_table.query(
-                KeyConditionExpression="doctor_email = :de",
-                ExpressionAttributeValues={":de": doctor_email},
-            )
-            availability = {}
-            for item in response.get("Items", []):
-                day, time_slot = item["day_time_slot"].split("#")
-                if day not in availability:
-                    availability[day] = []
-                availability[day].append(
-                    {
-                        "start_time": item["start_time"],
-                        "end_time": item["end_time"],
-                    }
-                )
-            logger.info(f"Retrieved availability for doctor: {doctor_email}")
-            return availability
-        except ClientError as e:
-            logger.error(
-                f"Error retrieving doctor availability: {e.response['Error']['Message']}"
-            )
-            return {}
 
 
 @app.post("/appointments")
@@ -225,15 +239,3 @@ async def get_doctor_appointments(doctor_email: str):
     )
     logger.info(f"Retrieved appointments for doctor: {doctor_email}")
     return appointments
-
-
-@app.get("/appointments/doctor/{doctor_email}/availability")
-async def get_doctor_availability(doctor_email: str):
-    logger.info(
-        f"Received request to get availability for doctor: {doctor_email}"
-    )
-    availability = await AppointmentService.get_doctor_availability(
-        doctor_email
-    )
-    logger.info(f"Retrieved availability for doctor: {doctor_email}")
-    return availability

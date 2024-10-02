@@ -1,6 +1,7 @@
 # auth_service/main.py
 import logging
 import os
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -24,12 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(root_path="/auth_service")
-
-# DynamoDB configuration
-dynamodb = boto3.resource(
-    "dynamodb", endpoint_url=os.environ.get("AWS_ENDPOINT_URL")
-)
-table = dynamodb.Table("auth")
 
 # JWT settings
 SECRET_KEY = (
@@ -85,13 +80,37 @@ class Token(BaseModel):
     token_type: str
 
 
-# Repository
-class AuthRepository:
-    @staticmethod
-    async def get_user(email: str):
+# Repository Port
+class AuthRepositoryPort(ABC):
+    @abstractmethod
+    async def get_user(self, email: str) -> Optional[UserInDB]:
+        pass
+
+    @abstractmethod
+    async def create_user(self, user: UserInDB) -> bool:
+        pass
+
+    @abstractmethod
+    async def delete_user(self, email: str) -> bool:
+        pass
+
+    @abstractmethod
+    async def get_all_doctors(self) -> List[DoctorResponse]:
+        pass
+
+
+# Repository Implementation
+class DynamoDBAuthRepository(AuthRepositoryPort):
+    def __init__(self):
+        self.dynamodb = boto3.resource(
+            "dynamodb", endpoint_url=os.environ.get("AWS_ENDPOINT_URL")
+        )
+        self.table = self.dynamodb.Table("auth")
+
+    async def get_user(self, email: str) -> Optional[UserInDB]:
         logger.info(f"Attempting to retrieve user: {email}")
         try:
-            response = table.get_item(Key={"email": email})
+            response = self.table.get_item(Key={"email": email})
             if "Item" in response:
                 logger.info(f"User retrieved successfully: {email}")
                 return UserInDB(**response["Item"])
@@ -103,11 +122,10 @@ class AuthRepository:
             )
             return None
 
-    @staticmethod
-    async def create_user(user: UserInDB):
+    async def create_user(self, user: UserInDB) -> bool:
         logger.info(f"Attempting to create user: {user.email}")
         try:
-            table.put_item(
+            self.table.put_item(
                 Item=user.dict(),
                 ConditionExpression="attribute_not_exists(email)",
             )
@@ -125,11 +143,10 @@ class AuthRepository:
             )
             return False
 
-    @staticmethod
-    async def delete_user(email: str):
+    async def delete_user(self, email: str) -> bool:
         logger.info(f"Attempting to delete user: {email}")
         try:
-            table.delete_item(Key={"email": email})
+            self.table.delete_item(Key={"email": email})
             logger.info(f"User deleted successfully: {email}")
             return True
         except ClientError as e:
@@ -138,11 +155,10 @@ class AuthRepository:
             )
             return False
 
-    @staticmethod
-    async def get_all_doctors():
+    async def get_all_doctors(self) -> List[DoctorResponse]:
         logger.info("Attempting to retrieve all doctors")
         try:
-            response = table.scan(
+            response = self.table.scan(
                 FilterExpression="user_type = :ut",
                 ExpressionAttributeValues={":ut": "doctor"},
             )
@@ -163,26 +179,25 @@ class AuthRepository:
 
 # Service
 class AuthService:
-    @staticmethod
-    def verify_password(plain_password, hashed_password):
+    def __init__(self, repository: AuthRepositoryPort):
+        self.repository = repository
+
+    def verify_password(self, plain_password, hashed_password):
         return pwd_context.verify(plain_password, hashed_password)
 
-    @staticmethod
-    def get_password_hash(password):
+    def get_password_hash(self, password):
         return pwd_context.hash(password)
 
-    @staticmethod
-    async def authenticate_user(email: str, password: str):
-        user = await AuthRepository.get_user(email)
+    async def authenticate_user(self, email: str, password: str):
+        user = await self.repository.get_user(email)
         if not user:
             return False
-        if not AuthService.verify_password(password, user.hashed_password):
+        if not self.verify_password(password, user.hashed_password):
             return False
         return user
 
-    @staticmethod
     def create_access_token(
-        data: dict, expires_delta: Optional[timedelta] = None
+        self, data: dict, expires_delta: Optional[timedelta] = None
     ):
         to_encode = data.copy()
         if expires_delta:
@@ -193,8 +208,7 @@ class AuthService:
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
 
-    @staticmethod
-    def decode_token(token: str):
+    def decode_token(self, token: str):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             email: str = payload.get("sub")
@@ -204,13 +218,56 @@ class AuthService:
         except jwt.PyJWTError:
             raise HTTPException(status_code=401, detail="Invalid token")
 
+    async def create_patient(self, user: PatientCreate) -> PatientResponse:
+        hashed_password = self.get_password_hash(user.password)
+        db_user = UserInDB(
+            **user.dict(), user_type="patient", hashed_password=hashed_password
+        )
+        success = await self.repository.create_user(db_user)
+        if not success:
+            raise HTTPException(
+                status_code=400, detail="Email already registered"
+            )
+        return PatientResponse(**user.dict())
+
+    async def create_doctor(self, user: DoctorCreate) -> DoctorResponse:
+        hashed_password = self.get_password_hash(user.password)
+        db_user = UserInDB(
+            **user.dict(), user_type="doctor", hashed_password=hashed_password
+        )
+        success = await self.repository.create_user(db_user)
+        if not success:
+            raise HTTPException(
+                status_code=400, detail="Email already registered"
+            )
+        return DoctorResponse(**user.dict())
+
+    async def delete_user(self, email: str, current_user: UserInDB):
+        if current_user.email != email:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to delete this user"
+            )
+        success = await self.repository.delete_user(email)
+        if not success:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"message": "User deleted successfully"}
+
+    async def get_all_doctors(self) -> List[DoctorResponse]:
+        return await self.repository.get_all_doctors()
+
 
 # Dependency
+def get_auth_service():
+    repository = DynamoDBAuthRepository()
+    return AuthService(repository)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
-    token_data = AuthService.decode_token(credentials.credentials)
-    user = await AuthRepository.get_user(email=token_data.email)
+    token_data = auth_service.decode_token(credentials.credentials)
+    user = await auth_service.repository.get_user(email=token_data.email)
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
@@ -218,49 +275,37 @@ async def get_current_user(
 
 # Routes
 @app.post("/register/patient", response_model=PatientResponse)
-async def create_patient(user: PatientCreate):
+async def create_patient(
+    user: PatientCreate, auth_service: AuthService = Depends(get_auth_service)
+):
     logger.info(f"Received request to create patient: {user.email}")
-    hashed_password = AuthService.get_password_hash(user.password)
-    db_user = UserInDB(
-        **user.dict(), user_type="patient", hashed_password=hashed_password
-    )
-    success = await AuthRepository.create_user(db_user)
-    if not success:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    return PatientResponse(**user.dict())
+    return await auth_service.create_patient(user)
 
 
 @app.post("/register/doctor", response_model=DoctorResponse)
-async def create_doctor(user: DoctorCreate):
+async def create_doctor(
+    user: DoctorCreate, auth_service: AuthService = Depends(get_auth_service)
+):
     logger.info(f"Received request to create doctor: {user.email}")
-    hashed_password = AuthService.get_password_hash(user.password)
-    db_user = UserInDB(
-        **user.dict(), user_type="doctor", hashed_password=hashed_password
-    )
-    success = await AuthRepository.create_user(db_user)
-    if not success:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    return DoctorResponse(**user.dict())
+    return await auth_service.create_doctor(user)
 
 
 @app.delete("/users/{email}")
 async def delete_user(
-    email: str, current_user: UserInDB = Depends(get_current_user)
+    email: str,
+    current_user: UserInDB = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
     logger.info(f"Received request to delete user: {email}")
-    if current_user.email != email:
-        raise HTTPException(
-            status_code=403, detail="Not authorized to delete this user"
-        )
-    success = await AuthRepository.delete_user(email)
-    if not success:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted successfully"}
+    return await auth_service.delete_user(email, current_user)
 
 
 @app.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await AuthService.authenticate_user(
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    user = await auth_service.authenticate_user(
         form_data.username, form_data.password
     )
     if not user:
@@ -270,7 +315,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = AuthService.create_access_token(
+    access_token = auth_service.create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -298,7 +343,6 @@ async def verify_token(current_user: UserInDB = Depends(get_current_user)):
 
 
 @app.get("/doctors", response_model=List[DoctorResponse])
-async def list_doctors():
+async def list_doctors(auth_service: AuthService = Depends(get_auth_service)):
     logger.info("Received request to list all doctors")
-    doctors = await AuthRepository.get_all_doctors()
-    return doctors
+    return await auth_service.get_all_doctors()

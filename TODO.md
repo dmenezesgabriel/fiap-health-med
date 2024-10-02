@@ -70,14 +70,14 @@ conhecimentos adquiridos durante o curso de Pós Graduação SOAT.
 
 11. [x] Desenvolvimento de um MVP da solução, contemplando os requisitos
         funcionais e não funcionais listados acima.
-12. Pipeline CI/CD
-    a. Demonstração do pipeline de deploy da aplicação.
-13. Testes unitários
-    a. Implantação de testes unitários que garantam o funcionamento da
-    solução
+12. [ ] Pipeline CI/CD
+        a. Demonstração do pipeline de deploy da aplicação.
+13. [ ] Testes unitários
+        a. Implantação de testes unitários que garantam o funcionamento da
+        solução
 14. [x] Não há a necessidade do desenvolvimento do Frontend da Solução.
-15. Formato da entregável: Vídeo gravado que demonstre o funcionamento do
-    sistema cumprindo os requisitos solicitados e Documentação escrita
-    (README ou Arquivo)
-    a. A duração máxima do vídeo deverá ser de, no máximo, 10 minutos.
-    Vídeos mais longos não serão corrigidos.
+15. [ ] Formato da entregável: Vídeo gravado que demonstre o funcionamento do
+        sistema cumprindo os requisitos solicitados e Documentação escrita
+        (README ou Arquivo)
+        a. A duração máxima do vídeo deverá ser de, no máximo, 10 minutos.
+        Vídeos mais longos não serão corrigidos.

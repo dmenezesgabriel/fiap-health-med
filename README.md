@@ -1,3 +1,10 @@
+# FIAP Health&Med
+
+This is a medical consultations system MVP made for FIAP Hackaton
+Postgraduate degree in software architecture.
+
+![archtecture](docs/archtecture.drawio.svg)
+
 # Log in to Docker Hub
 
 docker login
